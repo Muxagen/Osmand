@@ -99,11 +99,16 @@ public class RoutingHelper {
 		}
 		// to update route
 		setCurrentLocation(currentLocation);
-		
 	}
 	
 	public List<Location> getCurrentGPXRoute() {
 		return currentGPXRoute;
+	}
+	
+	public List<Location> getCurrentRoute() {
+		return currentGPXRoute == null || currentGPXRoute.isEmpty() ? Collections
+				.unmodifiableList(routeNodes) : Collections
+				.unmodifiableList(currentGPXRoute);
 	}
 	
 	public void setFinalLocation(LatLon finalLocation){

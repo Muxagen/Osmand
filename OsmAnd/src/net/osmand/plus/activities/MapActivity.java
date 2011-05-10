@@ -5,6 +5,8 @@ import java.util.Collections;
 import java.util.List;
 
 import net.osmand.Algoritms;
+import net.osmand.GPXUtilities.GPXFileResult;
+import net.osmand.GPXUtilities.WptPt;
 import net.osmand.LogUtil;
 import net.osmand.Version;
 import net.osmand.GPXUtilities.GPXFileResult;
@@ -16,6 +18,7 @@ import net.osmand.osm.LatLon;
 import net.osmand.plus.BusyIndicator;
 import net.osmand.plus.FavouritesDbHelper;
 import net.osmand.plus.OsmandSettings;
+import net.osmand.plus.OsmandSettings.ApplicationMode;
 import net.osmand.plus.R;
 import net.osmand.plus.ResourceManager;
 import net.osmand.plus.activities.search.SearchActivity;
@@ -26,12 +29,12 @@ import net.osmand.plus.views.OsmandMapTileView;
 import net.osmand.plus.views.PointLocationLayer;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.AlertDialog.Builder;
 import android.app.Dialog;
 import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.ProgressDialog;
-import android.app.AlertDialog.Builder;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.DialogInterface;
@@ -57,6 +60,7 @@ import android.os.Handler;
 import android.os.Message;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
+import android.provider.Settings.Secure;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.Menu;
@@ -64,8 +68,8 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.Window;
 import android.view.View.OnClickListener;
+import android.view.Window;
 import android.view.animation.AccelerateInterpolator;
 import android.view.animation.Animation;
 import android.view.animation.Transformation;
@@ -123,6 +127,8 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 	private Dialog progressDlg = null;
 	// App settings
 	private OsmandSettings settings;
+
+	private RouteAnimation routeAnimation = new RouteAnimation();
 	
 	
 	private boolean isMapLinkedToLocation(){
@@ -403,6 +409,7 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
     protected void onDestroy() {
     	super.onDestroy();
     	savingTrackHelper.close();
+    	routeAnimation.close();
     	if(mNotificationManager != null){
     		mNotificationManager.cancel(APP_NOTIFICATION_ID);
     	}
@@ -663,9 +670,6 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 		}
 	};
 	
-	
-
-	
 	@Override
 	protected void onPause() {
 		super.onPause();
@@ -886,8 +890,8 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 		boolean val = super.onPrepareOptionsMenu(menu);
 		MenuItem navigateToPointMenu = menu.findItem(R.id.map_navigate_to_point);
 		if (navigateToPointMenu != null) {
-			navigateToPointMenu.setTitle(routingHelper.isRouteCalculated() ? R.string.stop_routing : R.string.stop_navigation);
 			if (settings.getPointToNavigate() != null) {
+				navigateToPointMenu.setTitle(routingHelper.isRouteCalculated() ? R.string.stop_routing : R.string.stop_navigation);
 				navigateToPointMenu.setVisible(true);
 			} else {
 				navigateToPointMenu.setVisible(false);
@@ -895,64 +899,83 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 		}
 		MenuItem muteMenu = menu.findItem(R.id.map_mute); 
 		if(muteMenu != null){
-			muteMenu.setTitle(routingHelper.getVoiceRouter().isMute() ? R.string.menu_mute_on : R.string.menu_mute_off);
 			if (routingHelper.getFinalLocation() != null && routingHelper.isFollowingMode()) {
+				muteMenu.setTitle(routingHelper.getVoiceRouter().isMute() ? R.string.menu_mute_on : R.string.menu_mute_off);
 				muteMenu.setVisible(true);
 			} else {
 				muteMenu.setVisible(false);
 			}
+		}
+		MenuItem animateMenu = menu.findItem(R.id.map_animate_route);
+		if (animateMenu != null) {
+			animateMenu.setTitle(routeAnimation.isRouteAnimating() ? R.string.animate_route_off
+					: R.string.animate_route);
+			animateMenu.setVisible("1".equals(Secure.getString(
+					getContentResolver(), Secure.ALLOW_MOCK_LOCATION))
+					&& OsmandSettings.getPointToNavigate(settings) != null
+					&& routingHelper.isRouteCalculated());
 		}
 		
 		return val;
 	}
 	
     @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-		if (item.getItemId() == R.id.map_show_settings) {
-    		final Intent settings = new Intent(MapActivity.this, SettingsActivity.class);
+	public boolean onOptionsItemSelected(MenuItem item) {
+		switch (item.getItemId()) {
+		case R.id.map_show_settings:
+			final Intent settings = new Intent(MapActivity.this,
+					SettingsActivity.class);
 			startActivity(settings);
-    		return true;
-		} else if (item.getItemId() == R.id.map_where_am_i) {
+			return true;
+		case R.id.map_where_am_i:
 			backToLocationImpl();
-        	return true;
-		} else if (item.getItemId() == R.id.map_show_gps_status) {
+			return true;
+		case R.id.map_show_gps_status:
 			Intent intent = new Intent();
-			intent.setComponent(new ComponentName(GPS_STATUS_COMPONENT, GPS_STATUS_ACTIVITY));
-			ResolveInfo resolved = getPackageManager().resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
-			if(resolved != null){
+			intent.setComponent(new ComponentName(GPS_STATUS_COMPONENT,
+					GPS_STATUS_ACTIVITY));
+			ResolveInfo resolved = getPackageManager().resolveActivity(intent,
+					PackageManager.MATCH_DEFAULT_ONLY);
+			if (resolved != null) {
 				startActivity(intent);
 			} else {
 				AlertDialog.Builder builder = new AlertDialog.Builder(this);
 				builder.setMessage(getString(R.string.gps_status_app_not_found));
-				builder.setPositiveButton(getString(R.string.default_buttons_yes),
+				builder.setPositiveButton(
+						getString(R.string.default_buttons_yes),
 						new DialogInterface.OnClickListener() {
 							@Override
-							public void onClick(DialogInterface dialog, int which) {
-								Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse("market://search?q=pname:" + GPS_STATUS_COMPONENT));
+							public void onClick(DialogInterface dialog,
+									int which) {
+								Intent intent = new Intent(Intent.ACTION_VIEW,
+										Uri.parse("market://search?q=pname:"
+												+ GPS_STATUS_COMPONENT));
 								try {
 									startActivity(intent);
 								} catch (ActivityNotFoundException e) {
 								}
 							}
 						});
-				builder.setNegativeButton(getString(R.string.default_buttons_no), null);
+				builder.setNegativeButton(
+						getString(R.string.default_buttons_no), null);
 				builder.show();
 			}
 			return true;
-		} else if (item.getItemId() == R.id.map_get_directions) {
+		case R.id.map_get_directions:
 			getDirections(mapView.getLatitude(), mapView.getLongitude(), true);
 			return true;
-		} else if (item.getItemId() == R.id.map_layers) {
+		case R.id.map_layers:
 			mapLayers.openLayerSelectionDialog(mapView);
 			return true;
-		} else if (item.getItemId() == R.id.map_specify_point) {
+		case R.id.map_specify_point:
 			NavigatePointActivity dlg = new NavigatePointActivity(this);
 			dlg.showDialog();
 			return true;
-		} else if (item.getItemId() == R.id.map_mute) {
-			routingHelper.getVoiceRouter().setMute(!routingHelper.getVoiceRouter().isMute());
+		case R.id.map_mute:
+			routingHelper.getVoiceRouter().setMute(
+					!routingHelper.getVoiceRouter().isMute());
 			return true;
-    	}  else if (item.getItemId() == R.id.map_navigate_to_point) {
+		case R.id.map_navigate_to_point:
     		if(mapLayers.getNavigationLayer().getPointToNavigate() != null){
     			if(routingHelper.isRouteCalculated()){
     				routingHelper.setFinalAndCurrentLocation(null, null);
@@ -965,16 +988,22 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
     			navigateToPoint(new LatLon(mapView.getLatitude(), mapView.getLongitude()));
     		}
 			mapView.refreshMap();
-    	} else if (item.getItemId() == R.id.map_gpx_routing) {
+			return true;
+		case R.id.map_gpx_routing:
 			mapLayers.useGPXFileLayer(true, mapLayers.getNavigationLayer().getPointToNavigate(), mapView);
 			return true;
-    	} else if (item.getItemId() == R.id.map_show_point_options) {
+		case R.id.map_show_point_options:
 			contextMenuPoint(mapView.getLatitude(), mapView.getLongitude());
-    		return true;
-    	}
-    	return super.onOptionsItemSelected(item);
-    }
-    
+			return true;
+		case R.id.map_animate_route:
+			//animate moving on route
+			routeAnimation.startStopRouteAnimation(routingHelper, this);
+			return true;
+		default:
+			return super.onOptionsItemSelected(item);
+		}
+	}
+	
     private ApplicationMode getAppMode(ToggleButton[] buttons){
     	for(int i=0; i<buttons.length; i++){
     		if(buttons[i] != null && buttons[i].isChecked() && i < ApplicationMode.values().length){
@@ -1039,9 +1068,7 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 			@Override
 			public void onClick(DialogInterface dialog, int which) {
 				ApplicationMode mode = getAppMode(buttons);
-				Location map = new Location("map"); //$NON-NLS-1$
-				map.setLatitude(lat);
-				map.setLongitude(lon);
+				Location map = getLocationToStartFrom(lat, lon);
 				routingHelper.setAppMode(mode);
 				settings.FOLLOW_TO_THE_ROUTE.set(false);
 				routingHelper.setFollowingMode(false);
@@ -1060,12 +1087,7 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 					mapView.refreshMap();
 				}
 				
-				Location location = getLastKnownLocation();
-				if(location == null){
-					location = new Location("map"); //$NON-NLS-1$
-					location.setLatitude(lat);
-					location.setLongitude(lon);
-				} 
+				Location location = getLocationToStartFrom(lat, lon); 
 				routingHelper.setAppMode(mode);
 				settings.FOLLOW_TO_THE_ROUTE.set(true);
 				routingHelper.setFollowingMode(true);
@@ -1247,6 +1269,16 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
     
 	@Override
 	public void onAccuracyChanged(Sensor sensor, int accuracy) {
+	}
+
+	private Location getLocationToStartFrom(final double lat, final double lon) {
+		Location location = locationLayer.getLastKnownLocation();
+		if(location == null){
+			location = new Location("map"); //$NON-NLS-1$
+			location.setLatitude(lat);
+			location.setLongitude(lon);
+		}
+		return location;
 	}
 
 }
