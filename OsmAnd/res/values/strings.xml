@@ -3,7 +3,6 @@
 	<string name="animate_route_off">Animate off</string>
 	<string name="animate_route">Animate on</string>
 
-<<<<<<< OURS
 	<string name="overlay_transparency_descr">Modify overlay transparency</string>
 	<string name="overlay_transparency">Overlay transparency</string>
 	<string name="map_transparency_descr">Modify base map transparency</string>
@@ -22,8 +21,6 @@
 	<string name="select_tile_source_to_install">Select maps to install or update</string>
 	<string name="internet_not_available">Internet connection required for operation is not available</string>
 	<string name="more_external_layer">Install more...</string>
-=======
->>>>>>> THEIRS
 	<string name="tip_update_index">Index updating</string>
 	<string name="tip_update_index_t">It is very important to have actual map data. Osmand is equipped with download manager with which you can easily check if your indexes can be updated.
 	\n\tFor checking updates go to \'Main Menu\'->\'Settings\'->\'Data for offline usage\'->\'Download offline data\'. After reloading index list from internet, select option \'Filter downloaded\' from context menu.
