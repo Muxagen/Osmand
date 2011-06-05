@@ -6,10 +6,8 @@ import java.util.List;
 
 import net.osmand.Algoritms;
 import net.osmand.GPXUtilities.GPXFileResult;
-import net.osmand.GPXUtilities.WptPt;
 import net.osmand.LogUtil;
 import net.osmand.Version;
-import net.osmand.GPXUtilities.GPXFileResult;
 import net.osmand.data.MapTileDownloader;
 import net.osmand.data.MapTileDownloader.DownloadRequest;
 import net.osmand.data.MapTileDownloader.IMapDownloaderCallback;
@@ -18,7 +16,6 @@ import net.osmand.osm.LatLon;
 import net.osmand.plus.BusyIndicator;
 import net.osmand.plus.FavouritesDbHelper;
 import net.osmand.plus.OsmandSettings;
-import net.osmand.plus.OsmandSettings.ApplicationMode;
 import net.osmand.plus.R;
 import net.osmand.plus.ResourceManager;
 import net.osmand.plus.activities.search.SearchActivity;
@@ -912,7 +909,7 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 					: R.string.animate_route);
 			animateMenu.setVisible("1".equals(Secure.getString(
 					getContentResolver(), Secure.ALLOW_MOCK_LOCATION))
-					&& OsmandSettings.getPointToNavigate(settings) != null
+					&& settings.getPointToNavigate() != null
 					&& routingHelper.isRouteCalculated());
 		}
 		
@@ -923,9 +920,9 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 	public boolean onOptionsItemSelected(MenuItem item) {
 		switch (item.getItemId()) {
 		case R.id.map_show_settings:
-			final Intent settings = new Intent(MapActivity.this,
+			final Intent settingsIntent = new Intent(MapActivity.this,
 					SettingsActivity.class);
-			startActivity(settings);
+			startActivity(settingsIntent);
 			return true;
 		case R.id.map_where_am_i:
 			backToLocationImpl();
@@ -1272,7 +1269,7 @@ public class MapActivity extends Activity implements IMapLocationListener, Senso
 	}
 
 	private Location getLocationToStartFrom(final double lat, final double lon) {
-		Location location = locationLayer.getLastKnownLocation();
+		Location location = mapLayers.getLocationLayer().getLastKnownLocation();
 		if(location == null){
 			location = new Location("map"); //$NON-NLS-1$
 			location.setLatitude(lat);
